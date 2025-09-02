@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Spotify Explorer - Discover Similar Artists</title>
+<title>Spotify Explorer - Similar Artists & Tracks</title>
 <style>
 body { font-family: Arial, sans-serif; background:#121212; color:white; padding:20px; margin:0; }
 input, button { padding:10px; margin:5px 0; width:100%; font-size:16px; border-radius:5px; border:none; }
@@ -12,13 +12,13 @@ h2,h3 { margin:10px 0 5px; }
 .recommendations-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:12px; margin-top:15px; }
 .recommendation-card { position:relative; cursor:pointer; transition:transform 0.2s; }
 .recommendation-card:hover { transform:scale(1.05); }
-.recommendation-card img { width:100%; height:150px; border-radius:8px; display:block; }
-.tooltip { visibility:hidden; background-color:rgba(0,0,0,0.8); color:#fff; text-align:left; border-radius:5px; padding:6px; position:absolute; bottom:160px; left:50%; transform:translateX(-50%); width:180px; z-index:1; font-size:12px; }
+.recommendation-card img { width:100%; height:120px; border-radius:6px; display:block; }
+.tooltip { visibility:hidden; background-color:rgba(0,0,0,0.8); color:#fff; text-align:left; border-radius:5px; padding:6px; position:absolute; bottom:130px; left:50%; transform:translateX(-50%); width:180px; z-index:1; font-size:12px; }
 .recommendation-card:hover .tooltip { visibility:visible; }
 @media(max-width:600px){
   .recommendations-grid { grid-template-columns:repeat(auto-fill, minmax(100px,1fr)); }
-  .recommendation-card img { height:120px; }
-  .tooltip { bottom:130px; width:140px; font-size:11px; }
+  .recommendation-card img { height:100px; }
+  .tooltip { bottom:110px; width:140px; font-size:11px; }
 }
 </style>
 </head>
@@ -103,8 +103,9 @@ async function search(){
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// --- Fetch related artists + top tracks ---
+// --- Fetch related artists + top tracks with multiple market fallback ---
 async function getRelatedArtistsTracks(primaryArtistId, originalArtistId){
+  const markets=["US","GB","FR","DE","AU"];
   const res=await fetch(`https://api.spotify.com/v1/artists/${primaryArtistId}/related-artists`, {headers:{Authorization:`Bearer ${token}`}});
   const data=await res.json();
   if(!data.artists?.length) return;
@@ -113,22 +114,29 @@ async function getRelatedArtistsTracks(primaryArtistId, originalArtistId){
   const grid=document.createElement("div");
   grid.className="recommendations-grid";
 
-  for(let artist of data.artists.slice(0,5)){ // 5 related artists max
-    try{
-      const topRes=await fetch(`https://api.spotify.com/v1/artists/${artist.id}/top-tracks?market=US`, {headers:{Authorization:`Bearer ${token}`}});
-      const topData=await topRes.json();
-      topData.tracks.slice(0,2).forEach(track=>{
-        // Skip original artist tracks
-        if(track.artists.some(a=>a.id===originalArtistId)) return;
-        const img=track.album.images[0]?.url||'';
-        const card=document.createElement("div");
-        card.className="recommendation-card";
-        card.innerHTML=`<a href="${track.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${track.name}<br>by ${track.artists.map(a=>a.name).join(", ")}<br>Album: ${track.album.name}</div></a>`;
-        grid.appendChild(card);
-      });
-    } catch(e){ console.error("Error fetching top tracks for", artist.name, e);}
+  for(let artist of data.artists.slice(0,5)){
+    let tracksFound=false;
+    for(let market of markets){
+      try{
+        const topRes=await fetch(`https://api.spotify.com/v1/artists/${artist.id}/top-tracks?market=${market}`, {headers:{Authorization:`Bearer ${token}`}});
+        const topData=await topRes.json();
+        if(!topData.tracks?.length) continue;
+        topData.tracks.slice(0,2).forEach(track=>{
+          if(track.artists.some(a=>a.id===originalArtistId)) return;
+          const img=track.album.images[0]?.url||'';
+          const card=document.createElement("div");
+          card.className="recommendation-card";
+          card.innerHTML=`<a href="${track.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${track.name}<br>by ${track.artists.map(a=>a.name).join(", ")}<br>Album: ${track.album.name}</div></a>`;
+          grid.appendChild(card);
+          tracksFound=true;
+        });
+        if(tracksFound) break; // stop after first market with tracks
+      } catch(e){console.error("Error fetching top tracks for", artist.name, e);}
+    }
   }
-  document.getElementById("results").appendChild(grid);
+
+  if(grid.children.length) document.getElementById("results").appendChild(grid);
+  else document.getElementById("results").innerHTML+="<p>No related tracks found in any market.</p>";
 }
 
 handleRedirect();
