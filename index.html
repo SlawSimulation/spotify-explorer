@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Spotify Explorer - Multi-Fallback Suggestions</title>
+<title>Spotify Explorer - Genre-Based Suggestions</title>
 <style>
 body { font-family: Arial, sans-serif; background:#121212; color:white; padding:20px; margin:0; }
 input, button { padding:10px; margin:5px 0; width:100%; font-size:16px; border-radius:5px; border:none; }
@@ -24,7 +24,7 @@ h2,h3 { margin:10px 0 5px; }
 </head>
 <body>
 <h1>Spotify Explorer</h1>
-<p>Type a song or artist to discover similar songs and artists.</p>
+<p>Type a song or artist to discover similar songs and artists by genre.</p>
 <input type="text" id="query" placeholder="Enter song or artist name">
 <button onclick="search()">Search</button>
 <div id="results"></div>
@@ -110,7 +110,7 @@ async function search(){
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// --- Suggestions with 3 fallback layers ---
+// --- Suggestions with genre-based filtering ---
 async function getSuggestions(artist, track=null){
   const markets=["US","GB","FR","DE","AU"];
   let found=false;
@@ -126,9 +126,18 @@ async function getSuggestions(artist, track=null){
           topData.tracks.slice(0,2).forEach(t=>{
             if(track && t.artists.some(a=>a.id===track.artists[0].id)) return;
             const img=t.album.images[0]?.url||'';
+            const genreText = rArtist.genres.join(", ") || "Unknown genre";
             const card=document.createElement("div");
             card.className="recommendation-card";
-            card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
+            card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
+              <img src="${img}">
+              <div class="tooltip">
+                ${t.name}<br>
+                by ${t.artists.map(a=>a.name).join(", ")}<br>
+                Album: ${t.album.name}<br>
+                Genre(s): ${genreText}
+              </div>
+            </a>`;
             grid.appendChild(card);
             found=true;
           });
@@ -138,32 +147,53 @@ async function getSuggestions(artist, track=null){
     }
   }
 
-  // 2️⃣ Artist genres → search tracks
-  if(!found && artist.genres?.length){
-    const genre=artist.genres[0];
-    const genreData=await safeFetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`);
-    if(genreData?.tracks?.items?.length){
-      genreData.tracks.items.forEach(t=>{
-        const img=t.album.images[0]?.url||'';
-        const card=document.createElement("div");
-        card.className="recommendation-card";
-        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
-        grid.appendChild(card);
-        found=true;
-      });
+  // 2️⃣ Genre-based fallback using the input artist's genres
+  if(artist.genres?.length){
+    for(const genre of artist.genres){
+      const genreData=await safeFetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`);
+      if(genreData?.tracks?.items?.length){
+        genreData.tracks.items.forEach(t=>{
+          const img=t.album.images[0]?.url||'';
+          const trackArtist = t.artists[0];
+          const trackGenre = trackArtist.genres?.join(", ") || genre;
+          const card=document.createElement("div");
+          card.className="recommendation-card";
+          card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
+            <img src="${img}">
+            <div class="tooltip">
+              ${t.name}<br>
+              by ${t.artists.map(a=>a.name).join(", ")}<br>
+              Album: ${t.album.name}<br>
+              Genre(s): ${trackGenre}
+            </div>
+          </a>`;
+          grid.appendChild(card);
+          found=true;
+        });
+      }
+      if(found) break; // stop after first genre that returns results
     }
   }
 
-  // 3️⃣ Track keyword search → search by name
+  // 3️⃣ Track keyword search as last fallback
   if(!found && track){
     const keywordData=await safeFetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(track.name)}&type=track&limit=10`);
     if(keywordData?.tracks?.items?.length){
       keywordData.tracks.items.forEach(t=>{
-        if(t.artists.some(a=>a.id===track.artists[0].id)) return; // skip same artist
+        if(t.artists.some(a=>a.id===track.artists[0].id)) return;
         const img=t.album.images[0]?.url||'';
+        const trackGenre = t.artists[0]?.genres?.join(", ") || "Unknown genre";
         const card=document.createElement("div");
         card.className="recommendation-card";
-        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
+        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
+          <img src="${img}">
+          <div class="tooltip">
+            ${t.name}<br>
+            by ${t.artists.map(a=>a.name).join(", ")}<br>
+            Album: ${t.album.name}<br>
+            Genre(s): ${trackGenre}
+          </div>
+        </a>`;
         grid.appendChild(card);
         found=true;
       });
