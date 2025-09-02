@@ -78,15 +78,15 @@ async function search(){
   if(!query) return;
   document.getElementById("results").innerHTML="Searching...";
 
-  // Try song first
+  // Try track search first
   let res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
   let data=await res.json();
   document.getElementById("results").innerHTML="";
   if(data.tracks?.items?.length>0){
     const track=data.tracks.items[0];
-    const artistId=track.artists[0].id;
+    const artist=track.artists[0];
     document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><br><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    await getRelatedTracksAndArtists(track.artists[0], track);
+    await getRelatedTracksAndArtists(artist, track);
     return;
   }
 
@@ -103,63 +103,60 @@ async function search(){
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// --- Fetch related tracks & artists with genre fallback ---
+// --- Related tracks & artists with genre fallback ---
 async function getRelatedTracksAndArtists(artist, track=null){
   const markets=["US","GB","FR","DE","AU"];
-  let relatedFetched=false;
+  let foundRelated=false;
 
   // Try related artists
-  try {
+  try{
     const res=await fetch(`https://api.spotify.com/v1/artists/${artist.id}/related-artists`, {headers:{Authorization:`Bearer ${token}`}});
     if(res.ok){
       const data=await res.json();
       if(data.artists?.length){
-        relatedFetched=true;
+        foundRelated=true;
         document.getElementById("results").innerHTML+="<h3>Similar Artists & Their Top Tracks:</h3>";
         const grid=document.createElement("div"); grid.className="recommendations-grid";
 
         for(let rArtist of data.artists.slice(0,5)){
-          let found=false;
+          let trackAdded=false;
           for(let market of markets){
             const topRes=await fetch(`https://api.spotify.com/v1/artists/${rArtist.id}/top-tracks?market=${market}`, {headers:{Authorization:`Bearer ${token}`}});
             const topData=await topRes.json();
             if(!topData.tracks?.length) continue;
             topData.tracks.slice(0,2).forEach(t=>{
-              if(track && t.artists.some(a=>a.id===track.artists[0].id)) return; // skip original artist
+              if(track && t.artists.some(a=>a.id===track.artists[0].id)) return;
               const img=t.album.images[0]?.url||'';
               const card=document.createElement("div");
               card.className="recommendation-card";
               card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
               grid.appendChild(card);
-              found=true;
+              trackAdded=true;
             });
-            if(found) break;
+            if(trackAdded) break;
           }
         }
         document.getElementById("results").appendChild(grid);
       }
     }
-  } catch(e){ console.warn("No related artists or error", e); }
+  } catch(e){console.warn("No related artists for", artist.name, e);}
 
-  // If no related artists found, fallback to genre search
-  if(!relatedFetched){
-    const genres=artist.genres;
-    if(genres?.length){
-      const genre=genres[0];
-      const res=await fetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`, {headers:{Authorization:`Bearer ${token}`}});
-      const data=await res.json();
-      if(data.tracks?.items?.length){
-        document.getElementById("results").innerHTML+="<h3>Tracks in the same genre:</h3>";
-        const grid=document.createElement("div"); grid.className="recommendations-grid";
-        data.tracks.items.forEach(t=>{
-          const img=t.album.images[0]?.url||'';
-          const card=document.createElement("div");
-          card.className="recommendation-card";
-          card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
-          grid.appendChild(card);
-        });
-        document.getElementById("results").appendChild(grid);
-      }
+  // Fallback: genre-based tracks
+  if(!foundRelated && artist.genres?.length){
+    const genre=artist.genres[0];
+    const res=await fetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`, {headers:{Authorization:`Bearer ${token}`}});
+    const data=await res.json();
+    if(data.tracks?.items?.length){
+      document.getElementById("results").innerHTML+="<h3>Tracks in the same genre:</h3>";
+      const grid=document.createElement("div"); grid.className="recommendations-grid";
+      data.tracks.items.forEach(t=>{
+        const img=t.album.images[0]?.url||'';
+        const card=document.createElement("div");
+        card.className="recommendation-card";
+        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
+        grid.appendChild(card);
+      });
+      document.getElementById("results").appendChild(grid);
     }
   }
 }
