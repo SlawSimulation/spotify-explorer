@@ -4,22 +4,23 @@
 <meta charset="UTF-8">
 <title>Spotify Explorer - Genre-Based Suggestions</title>
 <style>
-body { font-family: Arial, sans-serif; background:#121212; color:white; padding:20px; margin:0; }
-input, button { padding:10px; margin:5px 0; width:100%; font-size:16px; border-radius:5px; border:none; }
-button { background:#1DB954; color:white; cursor:pointer; }
-button:hover { background:#1ed760cc; }
-h2,h3 { margin:10px 0 5px; }
-.recommendations-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:12px; margin-top:15px; }
-.recommendation-card { position:relative; cursor:pointer; transition:transform 0.2s; }
-.recommendation-card:hover { transform:scale(1.05); }
-.recommendation-card img { width:100%; height:120px; border-radius:6px; display:block; }
-.tooltip { visibility:hidden; background-color:rgba(0,0,0,0.8); color:#fff; text-align:left; border-radius:5px; padding:6px; position:absolute; bottom:130px; left:50%; transform:translateX(-50%); width:180px; z-index:1; font-size:12px; }
-.recommendation-card:hover .tooltip { visibility:visible; }
-@media(max-width:600px){
-  .recommendations-grid { grid-template-columns:repeat(auto-fill, minmax(100px,1fr)); }
-  .recommendation-card img { height:100px; }
-  .tooltip { bottom:110px; width:140px; font-size:11px; }
-}
+body{font-family:Arial,sans-serif;background:#121212;color:#fff;margin:0;padding:20px;}
+h1{margin-bottom:5px;font-size:24px;}
+p{margin-top:0;margin-bottom:15px;font-size:14px;color:#ccc;}
+input,button{padding:10px;margin:5px 0;border-radius:6px;border:none;font-size:16px;}
+input{width:calc(100% - 22px);background:#1e1e1e;color:#fff;}
+input::placeholder{color:#888;}
+button{width:100%;background:#1DB954;color:#fff;cursor:pointer;transition:0.2s;}
+button:hover{background:#1ed760cc;}
+.result{margin-bottom:15px;}
+h2,h3{margin:8px 0 5px;font-size:16px;}
+.recommendations-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:10px;}
+.recommendation-card{position:relative;cursor:pointer;transition:transform 0.2s;}
+.recommendation-card:hover{transform:scale(1.05);}
+.recommendation-card img{width:100%;height:120px;border-radius:6px;display:block;}
+.tooltip{visibility:hidden;background:rgba(0,0,0,0.8);color:#fff;text-align:left;border-radius:5px;padding:5px;position:absolute;bottom:130px;left:50%;transform:translateX(-50%);width:180px;font-size:12px;z-index:1;}
+.recommendation-card:hover .tooltip{visibility:visible;}
+@media(max-width:600px){.recommendations-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));}.recommendation-card img{height:100px;}.tooltip{bottom:110px;width:140px;font-size:11px;}}
 </style>
 </head>
 <body>
@@ -37,10 +38,10 @@ const AUTH_URL="https://accounts.spotify.com/authorize";
 const TOKEN_URL="https://accounts.spotify.com/api/token";
 let token=null;
 
-// --- PKCE helpers ---
-function generateRandomString(length){const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';let r='';for(let i=0;i<length;i++)r+=chars.charAt(Math.floor(Math.random()*chars.length));return r;}
-function base64UrlEncode(str){return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
-async function sha256(str){const encoder=new TextEncoder();const data=encoder.encode(str);const hashBuffer=await crypto.subtle.digest('SHA-256',data);return base64UrlEncode(String.fromCharCode(...new Uint8Array(hashBuffer)));}
+// PKCE helpers
+function generateRandomString(len){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';let r='';for(let i=0;i<len;i++)r+=c.charAt(Math.floor(Math.random()*c.length));return r;}
+function base64UrlEncode(s){return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+async function sha256(s){const e=new TextEncoder();const d=e.encode(s);const h=await crypto.subtle.digest('SHA-256',d);return base64UrlEncode(String.fromCharCode(...new Uint8Array(h)));}
 
 async function redirectToSpotifyLogin(){
   const codeVerifier=generateRandomString(128);
@@ -60,9 +61,7 @@ async function exchangeCodeForToken(code){
   const codeVerifier=localStorage.getItem("code_verifier");
   const body=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:REDIRECT_URI,client_id:CLIENT_ID,code_verifier:codeVerifier});
   const res=await fetch(TOKEN_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
-  const data=await res.json();
-  token=data.access_token;
-  localStorage.removeItem("code_verifier");
+  const data=await res.json(); token=data.access_token; localStorage.removeItem("code_verifier");
 }
 
 async function handleRedirect(){
@@ -72,51 +71,38 @@ async function handleRedirect(){
   if(!token) redirectToSpotifyLogin();
 }
 
-// --- Safe fetch helper ---
-async function safeFetch(url){
-  try{
-    const res=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-    if(!res.ok) return null;
-    return await res.json();
-  }catch(e){console.warn("Fetch error:", url,e); return null;}
-}
+// Safe fetch
+async function safeFetch(url){try{const res=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});if(!res.ok)return null;return await res.json();}catch(e){console.warn("Fetch error:",url,e);return null;}}
 
-// --- Main search ---
+// Enter key triggers search
+document.getElementById("query").addEventListener("keydown",e=>{if(e.key==="Enter") search();});
+
+// Main search
 async function search(){
   const query=document.getElementById("query").value.trim();
-  if(!query) return;
-  document.getElementById("results").innerHTML="Searching...";
-
-  // Try track search
+  if(!query) return; document.getElementById("results").innerHTML="Searching...";
   let data=await safeFetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`);
   document.getElementById("results").innerHTML="";
   if(data?.tracks?.items?.length){
-    const track=data.tracks.items[0];
-    const artist=track.artists[0];
-    document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><br><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    await getSuggestions(artist, track);
-    return;
+    const track=data.tracks.items[0]; const artist=track.artists[0];
+    document.getElementById("results").innerHTML=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><br><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    await getSuggestions(artist,track); return;
   }
-
-  // Fallback to artist search
   data=await safeFetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=1`);
   if(data?.artists?.items?.length){
     const artist=data.artists.items[0];
-    document.getElementById("results").innerHTML+=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><br><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    await getSuggestions(artist);
-    return;
+    document.getElementById("results").innerHTML=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><br><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    await getSuggestions(artist); return;
   }
-
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// --- Suggestions with genre-based filtering ---
+// Suggestions
 async function getSuggestions(artist, track=null){
-  const markets=["US","GB","FR","DE","AU"];
-  let found=false;
+  const markets=["US","GB","FR","DE","AU"]; let found=false;
   const grid=document.createElement("div"); grid.className="recommendations-grid";
 
-  // 1️⃣ Related artists → top tracks
+  // Related artists → top tracks
   const relatedData=await safeFetch(`https://api.spotify.com/v1/artists/${artist.id}/related-artists`);
   if(relatedData?.artists?.length){
     for(let rArtist of relatedData.artists.slice(0,5)){
@@ -126,24 +112,11 @@ async function getSuggestions(artist, track=null){
           for(const t of topData.tracks.slice(0,2)){
             if(track && t.artists.some(a=>a.id===track.artists[0].id)) continue;
             const img=t.album.images[0]?.url||'';
-            
-            // Fetch primary artist's genres
-            const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
-            const genreText = artistInfo?.genres?.join(", ") || "Unknown genre";
-
-            const card=document.createElement("div");
-            card.className="recommendation-card";
-            card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
-              <img src="${img}">
-              <div class="tooltip">
-                ${t.name}<br>
-                by ${t.artists.map(a=>a.name).join(", ")}<br>
-                Album: ${t.album.name}<br>
-                Genre(s): ${genreText}
-              </div>
-            </a>`;
-            grid.appendChild(card);
-            found=true;
+            const artistInfo=await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+            const genreText=artistInfo?.genres?.join(", ")||"Unknown genre";
+            const card=document.createElement("div"); card.className="recommendation-card";
+            card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}<br>Genre(s): ${genreText}</div></a>`;
+            grid.appendChild(card); found=true;
           }
           break;
         }
@@ -151,62 +124,42 @@ async function getSuggestions(artist, track=null){
     }
   }
 
-  // 2️⃣ Genre-based search using input artist's genres
+  // Genre-based search
   if(artist.genres?.length){
     for(const genre of artist.genres){
       const genreData=await safeFetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`);
       if(genreData?.tracks?.items?.length){
         for(const t of genreData.tracks.items){
           const img=t.album.images[0]?.url||'';
-          const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
-          const trackGenre = artistInfo?.genres?.join(", ") || genre;
-          const card=document.createElement("div");
-          card.className="recommendation-card";
-          card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
-            <img src="${img}">
-            <div class="tooltip">
-              ${t.name}<br>
-              by ${t.artists.map(a=>a.name).join(", ")}<br>
-              Album: ${t.album.name}<br>
-              Genre(s): ${trackGenre}
-            </div>
-          </a>`;
-          grid.appendChild(card);
-          found=true;
+          const artistInfo=await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+          const trackGenre=artistInfo?.genres?.join(", ")||genre;
+          const card=document.createElement("div"); card.className="recommendation-card";
+          card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}<br>Genre(s): ${trackGenre}</div></a>`;
+          grid.appendChild(card); found=true;
         }
       }
       if(found) break;
     }
   }
 
-  // 3️⃣ Track keyword fallback
+  // Track keyword fallback
   if(!found && track){
     const keywordData=await safeFetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(track.name)}&type=track&limit=10`);
     if(keywordData?.tracks?.items?.length){
       for(const t of keywordData.tracks.items){
         if(t.artists.some(a=>a.id===track.artists[0].id)) continue;
         const img=t.album.images[0]?.url||'';
-        const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
-        const trackGenre = artistInfo?.genres?.join(", ") || "Unknown genre";
-        const card=document.createElement("div");
-        card.className="recommendation-card";
-        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
-          <img src="${img}">
-          <div class="tooltip">
-            ${t.name}<br>
-            by ${t.artists.map(a=>a.name).join(", ")}<br>
-            Album: ${t.album.name}<br>
-            Genre(s): ${trackGenre}
-          </div>
-        </a>`;
-        grid.appendChild(card);
-        found=true;
+        const artistInfo=await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+        const trackGenre=artistInfo?.genres?.join(", ")||"Unknown genre";
+        const card=document.createElement("div"); card.className="recommendation-card";
+        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}<br>Genre(s): ${trackGenre}</div></a>`;
+        grid.appendChild(card); found=true;
       }
     }
   }
 
   if(found) document.getElementById("results").appendChild(grid);
-  else document.getElementById("results").innerHTML+="<p>No suggestions found for this song or artist. Try another track or artist.</p>";
+  else document.getElementById("results").innerHTML+="<p>No suggestions found for this song or artist.</p>";
 }
 
 handleRedirect();
