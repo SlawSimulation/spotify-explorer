@@ -1,196 +1,131 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Spotify Explorer PKCE</title>
-  <style>
-    body { font-family: Arial, sans-serif; background: #121212; color: white; padding: 20px; margin:0;}
-    input, button { padding: 10px; margin: 5px 0; width: 100%; font-size: 16px; box-sizing: border-box; border-radius: 5px; border: none; }
-    button { background: #1DB954; color: white; cursor: pointer; }
-    button:hover { background: #1ed760cc; }
-    .result { margin: 20px 0; border-bottom: 1px solid #333; padding-bottom: 10px; }
-    img { object-fit: cover; display: block; margin: 10px 0; border-radius: 8px; }
-    h2, h3 { margin: 10px 0 5px; }
-    a { color: #1DB954; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .recommendations-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-      gap: 12px;
-      margin-top: 15px;
-    }
-    .recommendation-card {
-      position: relative;
-      cursor: pointer;
-      border-radius: 8px;
-      overflow: hidden;
-      transition: transform 0.2s;
-    }
-    .recommendation-card:hover { transform: scale(1.05); }
-    .recommendation-card img { width: 100%; height: 150px; border-radius: 8px; display:block;}
-    .tooltip {
-      visibility: hidden;
-      background-color: rgba(0,0,0,0.8);
-      color: #fff;
-      text-align: left;
-      border-radius: 5px;
-      padding: 6px;
-      position: absolute;
-      bottom: 160px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 180px;
-      z-index: 1;
-      font-size: 12px;
-    }
-    .recommendation-card:hover .tooltip { visibility: visible; }
-
-    /* Mobile adjustments */
-    @media(max-width:600px){
-      .recommendations-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
-      .recommendation-card img { height: 120px; }
-      .tooltip { bottom: 130px; width: 140px; font-size: 11px; }
-    }
-
-    /* Genre color hints */
-    .recommendation-card[data-genre="pop"] { border: 2px solid #ff4c4c; }
-    .recommendation-card[data-genre="rock"] { border: 2px solid #4c6fff; }
-    .recommendation-card[data-genre="electronic"] { border: 2px solid #ffcc4c; }
-    .recommendation-card[data-genre="hip hop"] { border: 2px solid #8cff4c; }
-    .recommendation-card[data-genre="default"] { border: 2px solid #888; }
-  </style>
+<meta charset="UTF-8">
+<title>Spotify Explorer</title>
+<style>
+body { font-family: Arial, sans-serif; background:#121212; color:white; padding:20px; margin:0; }
+input, button { padding:10px; margin:5px 0; width:100%; font-size:16px; border-radius:5px; border:none; }
+button { background:#1DB954; color:white; cursor:pointer; }
+button:hover { background:#1ed760cc; }
+h2,h3 { margin:10px 0 5px; }
+.recommendations-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:12px; margin-top:15px; }
+.recommendation-card { position:relative; cursor:pointer; transition:transform 0.2s; }
+.recommendation-card:hover { transform:scale(1.05); }
+.recommendation-card img { width:100%; height:150px; border-radius:8px; display:block; }
+.tooltip { visibility:hidden; background-color:rgba(0,0,0,0.8); color:#fff; text-align:left; border-radius:5px; padding:6px; position:absolute; bottom:160px; left:50%; transform:translateX(-50%); width:180px; z-index:1; font-size:12px; }
+.recommendation-card:hover .tooltip { visibility:visible; }
+@media(max-width:600px){
+  .recommendations-grid { grid-template-columns:repeat(auto-fill, minmax(100px,1fr)); }
+  .recommendation-card img { height:120px; }
+  .tooltip { bottom:130px; width:140px; font-size:11px; }
+}
+</style>
 </head>
 <body>
-  <h1>Spotify Song/Artist/Genre Explorer</h1>
-  <p>Enter a song, artist, or genre to explore related content.</p>
-  <input type="text" id="query" placeholder="Enter song, artist, or genre">
-  <button onclick="search()">Search</button>
+<h1>Spotify Explorer</h1>
+<p>Type a song or artist to get recommendations.</p>
+<input type="text" id="query" placeholder="Enter song or artist name">
+<button onclick="search()">Search</button>
+<div id="results"></div>
 
-  <div id="results"></div>
+<script>
+const CLIENT_ID="d88fadc432d04cedadf4ec53368e1b4b";
+const REDIRECT_URI="https://slawsimulation.github.io/spotify-explorer/";
+const SCOPE="user-read-private user-read-email";
+const AUTH_URL="https://accounts.spotify.com/authorize";
+const TOKEN_URL="https://accounts.spotify.com/api/token";
+let token=null;
 
-  <script>
-    const CLIENT_ID = "d88fadc432d04cedadf4ec53368e1b4b";
-    const REDIRECT_URI = "https://slawsimulation.github.io/spotify-explorer/";
-    const SCOPE = "user-read-private user-read-email";
-    const AUTH_URL = "https://accounts.spotify.com/authorize";
-    const TOKEN_URL = "https://accounts.spotify.com/api/token";
+function generateRandomString(length){const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';let r='';for(let i=0;i<length;i++)r+=chars.charAt(Math.floor(Math.random()*chars.length));return r;}
+function base64UrlEncode(str){return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+async function sha256(str){const encoder=new TextEncoder();const data=encoder.encode(str);const hashBuffer=await crypto.subtle.digest('SHA-256',data);return base64UrlEncode(String.fromCharCode(...new Uint8Array(hashBuffer)));}
 
-    let token = null;
+async function redirectToSpotifyLogin(){
+  const codeVerifier=generateRandomString(128);
+  const codeChallenge=await sha256(codeVerifier);
+  localStorage.setItem("code_verifier",codeVerifier);
+  const url=new URL(AUTH_URL);
+  url.searchParams.set("response_type","code");
+  url.searchParams.set("client_id",CLIENT_ID);
+  url.searchParams.set("redirect_uri",REDIRECT_URI);
+  url.searchParams.set("scope",SCOPE);
+  url.searchParams.set("code_challenge_method","S256");
+  url.searchParams.set("code_challenge",codeChallenge);
+  window.location.href=url.toString();
+}
 
-    function generateRandomString(length) {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      let result = '';
-      for (let i = 0; i < length; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-      return result;
-    }
+async function exchangeCodeForToken(code){
+  const codeVerifier=localStorage.getItem("code_verifier");
+  const body=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:REDIRECT_URI,client_id:CLIENT_ID,code_verifier:codeVerifier});
+  const res=await fetch(TOKEN_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});
+  const data=await res.json();
+  token=data.access_token;
+  localStorage.removeItem("code_verifier");
+}
 
-    function base64UrlEncode(str) { return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
-    async function sha256(str) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(str);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      return base64UrlEncode(String.fromCharCode(...new Uint8Array(hashBuffer)));
-    }
+async function handleRedirect(){
+  const params=new URLSearchParams(window.location.search);
+  const code=params.get("code");
+  if(code){await exchangeCodeForToken(code);window.history.replaceState({},document.title,window.location.pathname);}
+  if(!token) redirectToSpotifyLogin();
+}
 
-    async function redirectToSpotifyLogin() {
-      const codeVerifier = generateRandomString(128);
-      const codeChallenge = await sha256(codeVerifier);
-      localStorage.setItem("code_verifier", codeVerifier);
+async function search(){
+  const query=document.getElementById("query").value;
+  if(!query) return;
+  document.getElementById("results").innerHTML="Searching...";
 
-      const url = new URL(AUTH_URL);
-      url.searchParams.set("response_type", "code");
-      url.searchParams.set("client_id", CLIENT_ID);
-      url.searchParams.set("redirect_uri", REDIRECT_URI);
-      url.searchParams.set("scope", SCOPE);
-      url.searchParams.set("code_challenge_method", "S256");
-      url.searchParams.set("code_challenge", codeChallenge);
+  // First try track search
+  let res=await fetch(`https://api.spotify.com/v1/search?q="${encodeURIComponent(query)}"&type=track&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
+  let data=await res.json();
+  document.getElementById("results").innerHTML="";
+  if(data.tracks?.items?.length>0){
+    const track=data.tracks.items[0];
+    document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    getRecommendations(track.id);
+    return;
+  }
 
-      window.location.href = url.toString();
-    }
+  // If no track found, try artist search
+  res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
+  data=await res.json();
+  if(data.artists?.items?.length>0){
+    const artist=data.artists.items[0];
+    document.getElementById("results").innerHTML+=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    // fetch top tracks to use as seed tracks
+    const topRes=await fetch(`https://api.spotify.com/v1/artists/${artist.id}/top-tracks?market=US`,{headers:{Authorization:`Bearer ${token}`}});
+    const topData=await topRes.json();
+    const seedTracks=topData.tracks.slice(0,5).map(t=>t.id).join(',');
+    getRecommendations(null, artist.id, seedTracks);
+    return;
+  }
 
-    async function exchangeCodeForToken(code) {
-      const codeVerifier = localStorage.getItem("code_verifier");
-      const body = new URLSearchParams({
-        grant_type: "authorization_code",
-        code: code,
-        redirect_uri: REDIRECT_URI,
-        client_id: CLIENT_ID,
-        code_verifier: codeVerifier
-      });
-      const res = await fetch(TOKEN_URL, { method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:body.toString() });
-      const data = await res.json();
-      token = data.access_token;
-      localStorage.removeItem("code_verifier");
-    }
+  document.getElementById("results").innerHTML="No track or artist found.";
+}
 
-    async function handleRedirect() {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
-      if (code) { await exchangeCodeForToken(code); window.history.replaceState({}, document.title, window.location.pathname); }
-      if (!token) redirectToSpotifyLogin();
-    }
+async function getRecommendations(trackId=null, artistId=null, seedTracks=''){
+  let url=`https://api.spotify.com/v1/recommendations?limit=12`;
+  if(trackId) url+=`&seed_tracks=${trackId}`;
+  if(seedTracks) url+=`&seed_tracks=${seedTracks}`;
+  if(artistId) url+=`&seed_artists=${artistId}`;
+  const res=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  const data=await res.json();
+  if(data.tracks?.length>0){
+    const grid=document.createElement("div");
+    grid.className="recommendations-grid";
+    data.tracks.forEach(t=>{
+      const img=t.album.images[0]?.url||'';
+      const card=document.createElement("div");
+      card.className="recommendation-card";
+      card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
+      grid.appendChild(card);
+    });
+    document.getElementById("results").appendChild(grid);
+  }
+}
 
-    async function search() {
-      const query = document.getElementById("query").value;
-      if (!query) return;
-      document.getElementById("results").innerHTML = "Searching...";
-
-      const resTrack = await fetch(`https://api.spotify.com/v1/search?q="${encodeURIComponent(query)}"&type=track&limit=1`, { headers:{Authorization:`Bearer ${token}`}});
-      const dataTrack = await resTrack.json();
-      document.getElementById("results").innerHTML = "";
-
-      if (dataTrack.tracks?.items?.length > 0) {
-        const track = dataTrack.tracks.items[0];
-        showTrack(track);
-        const artistId = track.artists[0].id;
-        const resArtist = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, { headers:{Authorization:`Bearer ${token}`}});
-        const artistData = await resArtist.json();
-        getRecommendations(track.id, artistId, artistData.genres, 15);
-      } else {
-        const resArtist = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=1`, { headers:{Authorization:`Bearer ${token}`}});
-        const artistData = await resArtist.json();
-        if (artistData.artists?.items?.length > 0) { 
-          const artist = artistData.artists.items[0];
-          showArtist(artist);
-          getRecommendations(null, artist.id, artist.genres, 15);
-        } else { document.getElementById("results").innerHTML = "No results found."; }
-      }
-    }
-
-    function showArtist(artist) {
-      document.getElementById("results").innerHTML += `<div class="result"><h2>Artist: ${artist.name}</h2><p>Genres: ${artist.genres.join(", ")}</p>${artist.images[0]? `<img src="${artist.images[0].url}"/>`:''}<a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    }
-
-    function showTrack(track) {
-      document.getElementById("results").innerHTML += `<div class="result"><h2>Track: ${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2>${track.album.images[0]? `<img src="${track.album.images[0].url}"/>`:''}<a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    }
-
-    async function getRecommendations(trackId, artistId, genres=[], limit=15) {
-      let url = `https://api.spotify.com/v1/recommendations?limit=${limit}`;
-      if(trackId) url+=`&seed_tracks=${trackId}`;
-      if(artistId) url+=`&seed_artists=${artistId}`;
-      if(genres.length) url+=`&seed_genres=${genres.slice(0,5).join(',')}`;
-      const res = await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-      const data = await res.json();
-      if(data.tracks?.length>0){
-        document.getElementById("results").innerHTML += "<h3>Recommended Songs:</h3>";
-        const grid = document.createElement("div");
-        grid.className="recommendations-grid";
-        data.tracks.forEach(t=>{
-          const albumImg=t.album.images[0]?.url||'';
-          const genre=t.genres?.[0] || t.genres || 'default';
-          const card=document.createElement("div");
-          card.className="recommendation-card";
-          card.setAttribute("data-genre", genre.toLowerCase());
-          card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${albumImg}" alt="Album cover"><div class="tooltip">${t.name}<br>by ${t.artists.map(a=>a.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
-          grid.appendChild(card);
-        });
-        document.getElementById("results").appendChild(grid);
-      }
-    }
-
-    handleRedirect();
-  </script>
+handleRedirect();
+</script>
 </body>
 </html>
