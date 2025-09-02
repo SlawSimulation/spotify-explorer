@@ -37,6 +37,7 @@ const AUTH_URL="https://accounts.spotify.com/authorize";
 const TOKEN_URL="https://accounts.spotify.com/api/token";
 let token=null;
 
+// --- PKCE helpers ---
 function generateRandomString(length){const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';let r='';for(let i=0;i<length;i++)r+=chars.charAt(Math.floor(Math.random()*chars.length));return r;}
 function base64UrlEncode(str){return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 async function sha256(str){const encoder=new TextEncoder();const data=encoder.encode(str);const hashBuffer=await crypto.subtle.digest('SHA-256',data);return base64UrlEncode(String.fromCharCode(...new Uint8Array(hashBuffer)));}
@@ -71,39 +72,40 @@ async function handleRedirect(){
   if(!token) redirectToSpotifyLogin();
 }
 
+// --- Main search ---
 async function search(){
-  const query=document.getElementById("query").value;
+  const query=document.getElementById("query").value.trim();
   if(!query) return;
   document.getElementById("results").innerHTML="Searching...";
 
-  // Try searching for a track first
-  let res=await fetch(`https://api.spotify.com/v1/search?q="${encodeURIComponent(query)}"&type=track&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
+  // Track search
+  let res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
   let data=await res.json();
   document.getElementById("results").innerHTML="";
   if(data.tracks?.items?.length>0){
     const track=data.tracks.items[0];
     const artistId=track.artists[0].id;
-    document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    await getRelatedArtistsTracks(artistId);
+    document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><br><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    await getRelatedArtistsTracks(artistId, track.artists[0].id);
     return;
   }
 
-  // If not a track, search for artist
+  // Artist search fallback
   res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=1`,{headers:{Authorization:`Bearer ${token}`}});
   data=await res.json();
   if(data.artists?.items?.length>0){
     const artist=data.artists.items[0];
-    document.getElementById("results").innerHTML+=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    await getRelatedArtistsTracks(artist.id);
+    document.getElementById("results").innerHTML+=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><br><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
+    await getRelatedArtistsTracks(artist.id, artist.id);
     return;
   }
 
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// Fetch related artists and show their top tracks properly
-async function getRelatedArtistsTracks(artistId){
-  const res=await fetch(`https://api.spotify.com/v1/artists/${artistId}/related-artists`,{headers:{Authorization:`Bearer ${token}`}});
+// --- Fetch related artists + top tracks ---
+async function getRelatedArtistsTracks(primaryArtistId, originalArtistId){
+  const res=await fetch(`https://api.spotify.com/v1/artists/${primaryArtistId}/related-artists`, {headers:{Authorization:`Bearer ${token}`}});
   const data=await res.json();
   if(!data.artists?.length) return;
 
@@ -111,21 +113,20 @@ async function getRelatedArtistsTracks(artistId){
   const grid=document.createElement("div");
   grid.className="recommendations-grid";
 
-  // Use for...of loop to await each top track fetch
-  for(let a of data.artists.slice(0,5)){ // limit to 5 related artists
-    try {
-      const topRes=await fetch(`https://api.spotify.com/v1/artists/${a.id}/top-tracks?market=US`,{headers:{Authorization:`Bearer ${token}`}});
+  for(let artist of data.artists.slice(0,5)){ // 5 related artists max
+    try{
+      const topRes=await fetch(`https://api.spotify.com/v1/artists/${artist.id}/top-tracks?market=US`, {headers:{Authorization:`Bearer ${token}`}});
       const topData=await topRes.json();
-      topData.tracks.slice(0,2).forEach(t=>{
-        const img=t.album.images[0]?.url||'';
+      topData.tracks.slice(0,2).forEach(track=>{
+        // Skip original artist tracks
+        if(track.artists.some(a=>a.id===originalArtistId)) return;
+        const img=track.album.images[0]?.url||'';
         const card=document.createElement("div");
         card.className="recommendation-card";
-        card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${t.name}<br>by ${t.artists.map(x=>x.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
+        card.innerHTML=`<a href="${track.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${track.name}<br>by ${track.artists.map(a=>a.name).join(", ")}<br>Album: ${track.album.name}</div></a>`;
         grid.appendChild(card);
       });
-    } catch(e){
-      console.error("Failed to fetch top tracks for", a.name, e);
-    }
+    } catch(e){ console.error("Error fetching top tracks for", artist.name, e);}
   }
   document.getElementById("results").appendChild(grid);
 }
