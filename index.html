@@ -123,10 +123,14 @@ async function getSuggestions(artist, track=null){
       for(let market of markets){
         const topData=await safeFetch(`https://api.spotify.com/v1/artists/${rArtist.id}/top-tracks?market=${market}`);
         if(topData?.tracks?.length){
-          topData.tracks.slice(0,2).forEach(t=>{
-            if(track && t.artists.some(a=>a.id===track.artists[0].id)) return;
+          for(const t of topData.tracks.slice(0,2)){
+            if(track && t.artists.some(a=>a.id===track.artists[0].id)) continue;
             const img=t.album.images[0]?.url||'';
-            const genreText = rArtist.genres.join(", ") || "Unknown genre";
+            
+            // Fetch primary artist's genres
+            const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+            const genreText = artistInfo?.genres?.join(", ") || "Unknown genre";
+
             const card=document.createElement("div");
             card.className="recommendation-card";
             card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
@@ -140,22 +144,22 @@ async function getSuggestions(artist, track=null){
             </a>`;
             grid.appendChild(card);
             found=true;
-          });
+          }
           break;
         }
       }
     }
   }
 
-  // 2️⃣ Genre-based fallback using the input artist's genres
+  // 2️⃣ Genre-based search using input artist's genres
   if(artist.genres?.length){
     for(const genre of artist.genres){
       const genreData=await safeFetch(`https://api.spotify.com/v1/search?q=genre:"${encodeURIComponent(genre)}"&type=track&limit=10`);
       if(genreData?.tracks?.items?.length){
-        genreData.tracks.items.forEach(t=>{
+        for(const t of genreData.tracks.items){
           const img=t.album.images[0]?.url||'';
-          const trackArtist = t.artists[0];
-          const trackGenre = trackArtist.genres?.join(", ") || genre;
+          const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+          const trackGenre = artistInfo?.genres?.join(", ") || genre;
           const card=document.createElement("div");
           card.className="recommendation-card";
           card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
@@ -169,20 +173,21 @@ async function getSuggestions(artist, track=null){
           </a>`;
           grid.appendChild(card);
           found=true;
-        });
+        }
       }
-      if(found) break; // stop after first genre that returns results
+      if(found) break;
     }
   }
 
-  // 3️⃣ Track keyword search as last fallback
+  // 3️⃣ Track keyword fallback
   if(!found && track){
     const keywordData=await safeFetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(track.name)}&type=track&limit=10`);
     if(keywordData?.tracks?.items?.length){
-      keywordData.tracks.items.forEach(t=>{
-        if(t.artists.some(a=>a.id===track.artists[0].id)) return;
+      for(const t of keywordData.tracks.items){
+        if(t.artists.some(a=>a.id===track.artists[0].id)) continue;
         const img=t.album.images[0]?.url||'';
-        const trackGenre = t.artists[0]?.genres?.join(", ") || "Unknown genre";
+        const artistInfo = await safeFetch(`https://api.spotify.com/v1/artists/${t.artists[0].id}`);
+        const trackGenre = artistInfo?.genres?.join(", ") || "Unknown genre";
         const card=document.createElement("div");
         card.className="recommendation-card";
         card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank">
@@ -196,7 +201,7 @@ async function getSuggestions(artist, track=null){
         </a>`;
         grid.appendChild(card);
         found=true;
-      });
+      }
     }
   }
 
