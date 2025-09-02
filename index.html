@@ -71,7 +71,6 @@ async function handleRedirect(){
   if(!token) redirectToSpotifyLogin();
 }
 
-// Main search function
 async function search(){
   const query=document.getElementById("query").value;
   if(!query) return;
@@ -85,7 +84,7 @@ async function search(){
     const track=data.tracks.items[0];
     const artistId=track.artists[0].id;
     document.getElementById("results").innerHTML+=`<div class="result"><h2>${track.name} by ${track.artists.map(a=>a.name).join(", ")}</h2><img src="${track.album.images[0]?.url||''}"/><a href="${track.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    getRelatedArtistsTracks(artistId);
+    await getRelatedArtistsTracks(artistId);
     return;
   }
 
@@ -95,34 +94,40 @@ async function search(){
   if(data.artists?.items?.length>0){
     const artist=data.artists.items[0];
     document.getElementById("results").innerHTML+=`<div class="result"><h2>Artist: ${artist.name}</h2><img src="${artist.images[0]?.url||''}"/><a href="${artist.external_urls.spotify}" target="_blank">Open on Spotify</a></div>`;
-    getRelatedArtistsTracks(artist.id);
+    await getRelatedArtistsTracks(artist.id);
     return;
   }
 
   document.getElementById("results").innerHTML="No track or artist found.";
 }
 
-// Fetch related artists and show their top tracks
+// Fetch related artists and show their top tracks properly
 async function getRelatedArtistsTracks(artistId){
   const res=await fetch(`https://api.spotify.com/v1/artists/${artistId}/related-artists`,{headers:{Authorization:`Bearer ${token}`}});
   const data=await res.json();
-  if(data.artists?.length>0){
-    document.getElementById("results").innerHTML+="<h3>Similar Artists & Their Top Tracks:</h3>";
-    const grid=document.createElement("div");
-    grid.className="recommendations-grid";
-    for(let a of data.artists.slice(0,5)){ // limit to 5 related artists
+  if(!data.artists?.length) return;
+
+  document.getElementById("results").innerHTML+="<h3>Similar Artists & Their Top Tracks:</h3>";
+  const grid=document.createElement("div");
+  grid.className="recommendations-grid";
+
+  // Use for...of loop to await each top track fetch
+  for(let a of data.artists.slice(0,5)){ // limit to 5 related artists
+    try {
       const topRes=await fetch(`https://api.spotify.com/v1/artists/${a.id}/top-tracks?market=US`,{headers:{Authorization:`Bearer ${token}`}});
       const topData=await topRes.json();
-      topData.tracks.slice(0,2).forEach(t=>{ // take top 2 tracks per related artist
+      topData.tracks.slice(0,2).forEach(t=>{
         const img=t.album.images[0]?.url||'';
         const card=document.createElement("div");
         card.className="recommendation-card";
         card.innerHTML=`<a href="${t.external_urls.spotify}" target="_blank"><img src="${img}" alt="Album cover"><div class="tooltip">${t.name}<br>by ${t.artists.map(x=>x.name).join(", ")}<br>Album: ${t.album.name}</div></a>`;
         grid.appendChild(card);
       });
+    } catch(e){
+      console.error("Failed to fetch top tracks for", a.name, e);
     }
-    document.getElementById("results").appendChild(grid);
   }
+  document.getElementById("results").appendChild(grid);
 }
 
 handleRedirect();
